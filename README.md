@@ -1,4 +1,3 @@
-# AWS Cloudformation project
 # CloudFormation Project for AWS
 
 This CloudFormation template sets up a simple AWS infrastructure that integrates **S3**, **Lambda**, and **EventBridge**. The resources created can be used for a variety of purposes such as automating file creation in an S3 bucket and running Lambda functions on a scheduled basis. ⚙️
