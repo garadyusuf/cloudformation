@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |
+  Basic CF for assessment exercise
+
+Parameters:
+  TestPrefix:
+    Type: String
+    Default: test-assessment
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+       !Sub
+          - '${TestPrefix}-bucket-${RandomGUID}'
+          - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${TestPrefix}-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      ManagedPolicyArns: 
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+  LambdaAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${TestPrefix}-s3access
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: S3all
+            Effect: Allow
+            Action:
+              - 's3:*'
+            Resource: '*'
+      Roles:
+        - !Ref LambdaExecutionRole
+
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['',['/aws/lambda/', !Ref LambdaFunction]]
+      RetentionInDays: 7
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Test code to complete a hello world output 
+      FunctionName: !Sub ${TestPrefix}-function
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn      
+      Runtime: "python3.8"
+      Timeout: 180
+      Environment:
+        Variables:
+          S3BUCKET: !Ref S3Bucket
+      Code:
+        ZipFile: |
+
+          import json
+          import os
+          import logging
+          import boto3
+          from datetime import datetime
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          # Environmental Vars
+          bucket_name = os.environ['S3BUCKET']
+          s3 = boto3.resource('s3')
+
+          def handler(event, context):
+
+              now = datetime.now() # current date and time
+              date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
+              file_name = "newfile-" + now.strftime("%Y%d%m%H%M%S") + ".txt"
+              content=f'Creating an S3 file at {date_time}'
+              logger.info(f'My environment variable is {bucket_name}')
+              logger.info(f'Adding file {file_name} to bucket {bucket_name}')    
+              s3.Object(bucket_name, file_name).put(Body=content)    
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(f'Added file {file_name} to bucket {bucket_name}')
+              }
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+  
+  EventBridgeBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub ${TestPrefix}-event-bus
+
+  LambdaFunctionSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${TestPrefix}-event-schedule
+      ScheduleExpression: cron(*/5 * * * ? *)
+      State: ENABLED
+      RoleArn:
+        Fn::GetAtt:
+        - EventBridgeRole
+        - Arn
+      Targets:
+      - Arn: !GetAtt LambdaFunction.Arn
+        Id: '1'
+    DependsOn: 
+      - LambdaFunction
+      - EventBridgeRole
+
+  LambdaFunctionCwPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LambdaFunction
+        - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - LambdaFunctionSchedule
+        - Arn
+
+Outputs:
+  S3Bucket:
+    Description: Bucket Created 
+    Value: !Ref S3Bucket 
+  LambdaExecutionRole:
+    Description: Lambda role created
+    Value: !Ref LambdaExecutionRole   
+  LambdaAccessPolicy:
+    Description: Policy to allow lambda to access s3
+    Value: !Ref LambdaAccessPolicy
+  LambdaLogGroup:
+    Description: Location and retention of logs from lambda
+    Value: !Ref LambdaLogGroup
+  LambdaFunction:
+    Description: Lambda Function created
+    Value: !Ref LambdaFunction   
+  EventBridgeRole:
+    Description: Role to configure the event bridge
+    Value: !Ref EventBridgeRole
+  LambdaFunctionSchedule:
+    Description: The schedule for the lambda
+    Value: !Ref LambdaFunctionSchedule
+  LambdaFunctionCwPermission:
+    Description: CloudWatch Events Rule Lambda permission
+    Value: !Ref LambdaFunctionCwPermission
+
+
