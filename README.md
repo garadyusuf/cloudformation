@@ -23,8 +23,7 @@ This CloudFormation template sets up a simple AWS infrastructure that integrates
 - This enables automation of the file creation process without manual intervention.
 
 ### 📑 **CloudWatch Logs**
-- A **CloudWatch Log Group** is created to capture the logs from the Lambda function, which will be kept for 7 days. You can view Lambda execution details here.
-
+- A **CloudWatch Log Group** is created to capture the logs from the Lambda function, which will be kept for 7 days. 
 ## Outputs
 
 After the CloudFormation stack is deployed, the following resources will be available:
