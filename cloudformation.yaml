@@ -1,7 +1,3 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: |
-  Basic CF for assessment exercise
-
 Parameters:
   TestPrefix:
     Type: String
